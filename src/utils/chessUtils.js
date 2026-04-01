@@ -1,4 +1,4 @@
-import { Chess } from 'chess.js'
+    import { Chess } from 'chess.js'
 
 // Format evaluation to readable string
 export const formatEval = (evalObj) => {
@@ -13,7 +13,7 @@ export const formatEval = (evalObj) => {
   return pawns >= 0 ? `+${pawns.toFixed(2)}` : pawns.toFixed(2)
 }
 
-// Convert centipawns to win probability (simplified)
+// Convert centipawns to win probability
 export const evalToWinChance = (cp) => {
   return 50 + 50 * (2 / (1 + Math.exp(-0.00368208 * cp)) - 1)
 }
@@ -40,7 +40,76 @@ export const getGameResult = (game) => {
   return null
 }
 
-// Convert UCI move to SAN (Standard Algebraic Notation)
+// Classify move based on evaluation change
+export const classifyMove = (evalBefore, evalAfter, side) => {
+  // Default values
+  const before = evalBefore?.value || 0
+  const after = evalAfter?.value || 0
+  
+  // Calculate centipawn loss
+  let loss = 0
+  
+  if (side === 'w') {
+    // White moved: eval should stay same or improve
+    loss = (before - after)
+  } else {
+    // Black moved: eval should stay same or improve for black
+    loss = (after - before)
+  }
+  
+  // Check for mate situations
+  if (evalAfter?.type === 'mate') {
+    const mateIn = Math.abs(evalAfter.value)
+    if ((side === 'w' && evalAfter.value > 0) || (side === 'b' && evalAfter.value < 0)) {
+      // Found mate
+      return { class: 'brilliant', loss: 0 }
+    }
+  }
+  
+  // Classification thresholds (centipawns)
+  if (loss < 10) {
+    // Check if it was the only good move
+    return { class: 'best', loss }
+  } else if (loss < 30) {
+    return { class: 'excellent', loss }
+  } else if (loss < 70) {
+    return { class: 'good', loss }
+  } else if (loss < 150) {
+    return { class: 'inaccuracy', loss }
+  } else if (loss < 300) {
+    return { class: 'mistake', loss }
+  } else {
+    return { class: 'blunder', loss }
+  }
+}
+
+// Calculate accuracy percentage from classifications
+export const getAccuracy = (classifications) => {
+  if (!classifications || classifications.length === 0) {
+    return { white: 0, black: 0 }
+  }
+  
+  const whiteMoves = classifications.filter((_, i) => i % 2 === 0)
+  const blackMoves = classifications.filter((_, i) => i % 2 === 1)
+  
+  const calcAccuracy = (moves) => {
+    if (moves.length === 0) return 0
+    
+    // Weighted by centipawn loss
+    const totalLoss = moves.reduce((sum, m) => sum + (m?.loss || 0), 0)
+    const avgLoss = totalLoss / moves.length
+    
+    // Accuracy formula: 100 - (avgLoss / 10), min 0
+    return Math.max(0, Math.min(100, Math.round(100 - (avgLoss / 10))))
+  }
+  
+  return {
+    white: calcAccuracy(whiteMoves),
+    black: calcAccuracy(blackMoves)
+  }
+}
+
+// Convert UCI move to SAN
 export const uciToSan = (uci, fen) => {
   try {
     const game = new Chess(fen)
@@ -76,38 +145,6 @@ export const parseVariation = (uciMoves, startFen) => {
   return sanMoves
 }
 
-// Get opening name from FEN (simplified - real app would use ECO db)
-export const getOpeningName = (fen) => {
-  // Placeholder - real implementation needs ECO database
-  const moves = fen.split(' ')[5] // halfmove clock not useful here
-  return 'Unknown Opening'
-}
-
-// Calculate accuracy percentage from move classifications
-export const calculateAccuracy = (moves, side) => {
-  const sideMoves = moves.filter(m => 
-    (side === 'white' && m.side === 'w') || 
-    (side === 'black' && m.side === 'b')
-  )
-  
-  if (sideMoves.length === 0) return 0
-  
-  const weights = {
-    best: 1.0,
-    excellent: 0.9,
-    good: 0.7,
-    inaccuracy: 0.5,
-    mistake: 0.3,
-    blunder: 0.0
-  }
-  
-  const totalWeight = sideMoves.reduce((sum, m) => {
-    return sum + (weights[m.classification?.class] || 0.5)
-  }, 0)
-  
-  return Math.round((totalWeight / sideMoves.length) * 100)
-}
-
 // Export FEN to clipboard
 export const copyFEN = (fen) => {
   navigator.clipboard.writeText(fen)
@@ -133,4 +170,5 @@ export const getMaterialCount = (fen) => {
   }
   
   return { white, black, diff: white - black }
-}
+    }
+
