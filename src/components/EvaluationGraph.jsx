@@ -1,26 +1,31 @@
-import { useMemo } from 'react'
+  import { useMemo } from 'react'
 
-function EvaluationGraph({ history, currentMove }) {
-  // Generate fake eval history for display (real app would store eval per move)
+function EvaluationGraph({ history, currentMove, classifications }) {
+  // Generate eval history from classifications
   const dataPoints = useMemo(() => {
-    // Placeholder: random walk for demo
-    // Real implementation: store engine eval after each move
     const points = []
-    let value = 0
+    let cumulativeEval = 0
     
     for (let i = 0; i <= history.length; i++) {
-      // Simulate some evaluation changes
-      value += (Math.random() - 0.5) * 100
-      value = Math.max(-500, Math.min(500, value)) // Clamp
+      // Use classification loss to estimate eval
+      const cls = classifications[i - 1]
+      if (cls) {
+        cumulativeEval += (i % 2 === 1 ? 1 : -1) * cls.loss
+      }
+      
+      // Clamp between -500 and 500
+      cumulativeEval = Math.max(-500, Math.min(500, cumulativeEval))
+      
       points.push({
         move: i,
-        value: value,
-        isCurrent: i === currentMove + 1
+        value: cumulativeEval,
+        isCurrent: i === currentMove + 1,
+        classification: cls
       })
     }
     
     return points
-  }, [history.length, currentMove])
+  }, [history.length, currentMove, classifications])
 
   const maxVal = 500
   const minVal = -500
@@ -28,6 +33,21 @@ function EvaluationGraph({ history, currentMove }) {
 
   const getY = (value) => {
     return 100 - ((value - minVal) / range) * 100
+  }
+
+  const getColor = (point) => {
+    if (!point.classification) return '#81B64C'
+    const colors = {
+      brilliant: '#1baca6',
+      great: '#81b64c',
+      best: '#81b64c',
+      excellent: '#81b64c',
+      good: '#a0a0a0',
+      inaccuracy: '#f0c14c',
+      mistake: '#e58f2a',
+      blunder: '#ca3431'
+    }
+    return colors[point.classification.class] || '#81B64C'
   }
 
   if (history.length < 2) {
@@ -62,7 +82,7 @@ function EvaluationGraph({ history, currentMove }) {
         >
           {/* Area under curve */}
           <path
-            d={`${pathData} L 100 100 L 0 100 Z`}
+            d={`${pathData} L 100 50 L 0 50 Z`}
             fill="rgba(129, 182, 76, 0.2)"
           />
           
@@ -75,18 +95,16 @@ function EvaluationGraph({ history, currentMove }) {
             vectorEffect="non-scaling-stroke"
           />
           
-          {/* Current move indicator */}
+          {/* Data points */}
           {dataPoints.map((point, i) => (
-            point.isCurrent && (
-              <circle
-                key={i}
-                cx={(i / (dataPoints.length - 1 || 1)) * 100}
-                cy={getY(point.value)}
-                r="3"
-                fill="#60A5FA"
-                vectorEffect="non-scaling-stroke"
-              />
-            )
+            <circle
+              key={i}
+              cx={(i / (dataPoints.length - 1 || 1)) * 100}
+              cy={getY(point.value)}
+              r={point.isCurrent ? "3" : "1.5"}
+              fill={point.isCurrent ? "#60A5FA" : getColor(point)}
+              vectorEffect="non-scaling-stroke"
+            />
           ))}
         </svg>
         
@@ -99,3 +117,4 @@ function EvaluationGraph({ history, currentMove }) {
 }
 
 export default EvaluationGraph
+  
