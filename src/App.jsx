@@ -1,26 +1,66 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Chessboard } from 'react-chessboard'
 import { Chess } from 'chess.js'
 import AnalysisPanel from './components/AnalysisPanel'
 import EvaluationGraph from './components/EvaluationGraph'
+import ImportPanel from './components/ImportPanel'
 import useStockfish from './hooks/useStockfish'
+import useAnalysis from './hooks/useAnalysis'
+import { classifyMove, getAccuracy } from './utils/chessUtils'
 
 function App() {
   const [game, setGame] = useState(new Chess())
   const [fen, setFen] = useState('start')
   const [history, setHistory] = useState([])
   const [currentMove, setCurrentMove] = useState(-1)
+  const [moveClassifications, setMoveClassifications] = useState([])
+  const [showImport, setShowImport] = useState(false)
   
   const { 
     evaluation, 
     bestLine, 
     isAnalyzing, 
     startAnalysis, 
-    stopAnalysis 
+    stopAnalysis,
+    getBestMove 
   } = useStockfish()
 
-  const onDrop = useCallback((sourceSquare, targetSquare) => {
+  // Analyze position after each move
+  useEffect(() => {
+    if (fen !== 'start') {
+      startAnalysis(fen)
+    }
+  }, [fen])
+
+  const classifyLastMove = useCallback(async (prevFen, currentFen, move) => {
+    if (!prevFen || currentMove < 0) return null
+    
+    // Get eval before move
+    const prevEval = await new Promise(resolve => {
+      const checkEval = setInterval(() => {
+        if (evaluation && !isAnalyzing) {
+          clearInterval(checkEval)
+          resolve(evaluation)
+        }
+      }, 100)
+      setTimeout(() => {
+        clearInterval(checkEval)
+        resolve(evaluation)
+      }, 2000)
+    })
+    
+    // Get eval after move
+    startAnalysis(currentFen)
+    await new Promise(r => setTimeout(r, 1500))
+    
+    const currentEval = evaluation
+    
+    return classifyMove(prevEval, currentEval, move.color)
+  }, [evaluation, isAnalyzing, startAnalysis, currentMove])
+
+  const onDrop = useCallback(async (sourceSquare, targetSquare) => {
     try {
+      const prevFen = game.fen()
       const move = game.move({
         from: sourceSquare,
         to: targetSquare,
@@ -37,12 +77,17 @@ function App() {
       setHistory(newHistory)
       setCurrentMove(newHistory.length - 1)
       
-      startAnalysis(game.fen())
+      // Classify move
+      const classification = await classifyLastMove(prevFen, game.fen(), move)
+      const newClassifications = [...moveClassifications.slice(0, currentMove + 1)]
+      newClassifications.push(classification)
+      setMoveClassifications(newClassifications)
+      
       return true
     } catch (e) {
       return false
     }
-  }, [game, history, currentMove, startAnalysis])
+  }, [game, history, currentMove, moveClassifications, classifyLastMove])
 
   const goToMove = (index) => {
     const newGame = new Chess()
@@ -52,7 +97,49 @@ function App() {
     setGame(newGame)
     setFen(newGame.fen())
     setCurrentMove(index)
-    startAnalysis(newGame.fen())
+  }
+
+  const loadGame = (pgnGame) => {
+    const newGame = new Chess()
+    
+    // Apply all moves
+    for (const move of pgnGame.moves) {
+      newGame.move(move)
+    }
+    
+    setGame(new Chess(newGame.fen()))
+    setFen(newGame.fen())
+    setHistory(pgnGame.moves)
+    setCurrentMove(pgnGame.moves.length - 1)
+    setMoveClassifications([])
+    
+    // Analyze all moves
+    analyzeGame(pgnGame.moves)
+  }
+
+  const analyzeGame = async (moves) => {
+    const classifications = []
+    const tempGame = new Chess()
+    
+    for (let i = 0; i < moves.length; i++) {
+      const prevFen = tempGame.fen()
+      const move = moves[i]
+      tempGame.move(move)
+      
+      // Quick analysis (shorter time for batch)
+      startAnalysis(tempGame.fen())
+      await new Promise(r => setTimeout(r, 800))
+      
+      const classification = classifyMove(
+        { value: 0 }, // Simplified - should store actual evals
+        evaluation || { value: 0 },
+        move.color
+      )
+      
+      classifications.push(classification)
+    }
+    
+    setMoveClassifications(classifications)
   }
 
   const resetBoard = () => {
@@ -61,6 +148,7 @@ function App() {
     setFen('start')
     setHistory([])
     setCurrentMove(-1)
+    setMoveClassifications([])
     stopAnalysis()
   }
 
@@ -74,12 +162,26 @@ function App() {
     goToMove(currentMove + 1)
   }
 
+  const accuracy = getAccuracy(moveClassifications)
+
   return (
     <div className="min-h-screen bg-gray-900 p-4">
       <div className="max-w-7xl mx-auto">
-        <h1 className="text-3xl font-bold text-center mb-6 text-white">
-          Chess Analysis
-        </h1>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-white">
+            ♟️ Chess Analysis
+          </h1>
+          <button
+            onClick={() => setShowImport(!showImport)}
+            className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-500"
+          >
+            {showImport ? 'Hide Import' : 'Import Chess.com'}
+          </button>
+        </div>
+
+        {showImport && (
+          <ImportPanel onLoadGame={loadGame} />
+        )}
         
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Board Section */}
@@ -118,6 +220,20 @@ function App() {
                   Redo →
                 </button>
               </div>
+
+              {/* Accuracy */}
+              {accuracy.white > 0 && (
+                <div className="flex justify-center gap-8 mt-4">
+                  <div className="text-center">
+                    <div className="text-sm text-gray-400">White Accuracy</div>
+                    <div className="text-2xl font-bold text-white">{accuracy.white}%</div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-sm text-gray-400">Black Accuracy</div>
+                    <div className="text-2xl font-bold text-white">{accuracy.black}%</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -130,11 +246,13 @@ function App() {
               history={history}
               currentMove={currentMove}
               onMoveClick={goToMove}
+              classifications={moveClassifications}
             />
             
             <EvaluationGraph 
               history={history}
               currentMove={currentMove}
+              classifications={moveClassifications}
             />
           </div>
         </div>
@@ -144,4 +262,5 @@ function App() {
 }
 
 export default App
+        
             
