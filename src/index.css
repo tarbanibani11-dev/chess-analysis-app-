@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-gray-900 text-white;
+  }
+}
+
+@layer components {
+  .analysis-bar {
+    @apply relative h-8 bg-gray-700 rounded overflow-hidden;
+  }
+  
+  .analysis-bar-white {
+    @apply absolute left-0 top-0 h-full bg-white transition-all duration-300;
+  }
+  
+  .eval-score {
+    @apply text-sm font-mono font-bold;
+  }
+  
+  .move-best {
+    @apply text-green-400 font-bold;
+  }
+  
+  .move-blunder {
+    @apply text-red-500 font-bold;
+  }
+  
+  .move-mistake {
+    @apply text-orange-400 font-bold;
+  }
+  
+  .move-inaccuracy {
+    @apply text-yellow-400 font-bold;
+  }
+}
