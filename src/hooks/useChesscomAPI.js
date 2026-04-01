@@ -1,5 +1,7 @@
 import { useState, useCallback } from 'react'
 
+// Use CORS proxy for Chess.com API
+const CORS_PROXY = 'https://api.allorigins.win/raw?url='
 const BASE_URL = 'https://api.chess.com/pub'
 
 export function useChesscomAPI() {
@@ -11,7 +13,7 @@ export function useChesscomAPI() {
     setError(null)
     
     try {
-      const response = await fetch(`${BASE_URL}/player/${username}/stats`)
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(`${BASE_URL}/player/${username}/stats`)}`)
       if (!response.ok) throw new Error('Player not found')
       return await response.json()
     } catch (err) {
@@ -28,26 +30,9 @@ export function useChesscomAPI() {
     
     try {
       const mm = month.toString().padStart(2, '0')
-      const response = await fetch(
-        `${BASE_URL}/player/${username}/games/${year}/${mm}`
-      )
-      if (!response.ok) throw new Error('Games not found')
-      const data = await response.json()
-      return data.games || []
-    } catch (err) {
-      setError(err.message)
-      return []
-    } finally {
-      setIsLoading(false)
-    }
-  }, [])
-
-  const fetchCurrentDailyGames = useCallback(async (username) => {
-    setIsLoading(true)
-    setError(null)
-    
-    try {
-      const response = await fetch(`${BASE_URL}/player/${username}/games`)
+      const url = `${BASE_URL}/player/${username}/games/${year}/${mm}`
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(url)}`)
+      
       if (!response.ok) throw new Error('Games not found')
       const data = await response.json()
       return data.games || []
@@ -61,8 +46,17 @@ export function useChesscomAPI() {
 
   const fetchGamePGN = useCallback(async (gameUrl) => {
     try {
-      const response = await fetch(gameUrl)
-      if (!response.ok) throw new Error('PGN not found')
+      // Chess.com game URL to PGN
+      const pgnUrl = gameUrl.replace('/live/', '/live/games/').replace('/daily/', '/daily/games/')
+      const response = await fetch(`${CORS_PROXY}${encodeURIComponent(pgnUrl + '/pgn')}`)
+      
+      if (!response.ok) {
+        // Try alternative URL format
+        const altResponse = await fetch(`${CORS_PROXY}${encodeURIComponent(gameUrl + '/pgn')}`)
+        if (!altResponse.ok) throw new Error('PGN not found')
+        return await altResponse.text()
+      }
+      
       return await response.text()
     } catch (err) {
       setError(err.message)
@@ -75,7 +69,6 @@ export function useChesscomAPI() {
     error,
     fetchPlayerStats,
     fetchPlayerGames,
-    fetchCurrentDailyGames,
     fetchGamePGN
   }
 }
